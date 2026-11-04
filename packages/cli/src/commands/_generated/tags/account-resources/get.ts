@@ -21,7 +21,7 @@ import { runWithTelemetry } from "#lib/telemetry/index.js";
 function builder(yargs: Argv<CommonYargsOptions>) {
 	return yargs
 		.usage(
-			"$0 tags account-resources get\n\nRetrieves tags for a specific account or zone-level resource."
+			"$0 tags account-resources get\n\nRetrieves tags for a specific account or zone-level resource.\n\nRuns against your account. Pass --zone to run against a zone instead. CLOUDFLARE_ZONE_ID is ignored."
 		)
 		.option("resource-id", {
 			type: "string",
@@ -39,6 +39,7 @@ function builder(yargs: Argv<CommonYargsOptions>) {
 				"account_ruleset",
 				"ai_gateway",
 				"ai_search_instance",
+				"ai_search_namespace",
 				"alerting_policy",
 				"alerting_webhook",
 				"cloudflared_tunnel",

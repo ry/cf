@@ -31,7 +31,7 @@ function builder(yargs: Argv<CommonYargsOptions>) {
 		.option("namespace", {
 			type: "string",
 			description: "Namespace to use for this operation.",
-			demandOption: true,
+			default: "default",
 		})
 		.option("dry-run", {
 			type: "boolean",
@@ -87,7 +87,6 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						message: `This operation permanently deletes the AI Search instance and all its indexed data.`,
 					}))
 				) {
-					process.stderr.write("Aborted.\n");
 					return;
 				}
 

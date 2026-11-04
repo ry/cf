@@ -87,18 +87,17 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						message: `This removes catalog metadata. R2 bucket objects are retained.`,
 					}))
 				) {
-					process.stderr.write("Aborted.\n");
 					return;
 				}
 
-				const result = await withProgress(`Deleting`, async () =>
+				const result = await withProgress(`Processing`, async () =>
 					client.send(operation, {
 						account_id: accountId,
 						bucket_name: argv["bucket-name"],
 						...queryParams,
 					})
 				);
-				formatOutput(result, { successLabel: `Deleted` });
+				formatOutput(result, { successLabel: `Done` });
 			}
 		),
 };

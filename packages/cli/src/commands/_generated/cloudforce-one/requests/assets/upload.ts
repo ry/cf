@@ -57,6 +57,11 @@ function builder(yargs: Argv<CommonYargsOptions>) {
 			type: "string",
 			description:
 				'Optional JSON string of key-value pairs (e.g., \'{"key1":"value1"}\')',
+		})
+		.option("source", {
+			type: "string",
+			description:
+				"Literal content or @path/to/file for the `source` form field. The file to upload (can also use 'file')",
 		});
 }
 
@@ -92,6 +97,7 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 							file: argv["file"],
 							description: argv["description"],
 							metadata: argv["metadata"],
+							source: argv["source"],
 						},
 					});
 					return;
@@ -104,10 +110,11 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 					argv.file !== undefined ||
 					argv.body !== undefined ||
 					argv["description"] !== undefined ||
-					argv["metadata"] !== undefined
+					argv["metadata"] !== undefined ||
+					argv["source"] !== undefined
 				) {
 					const formData = new FormData();
-					if (argv.file) {
+					if (argv.file !== undefined) {
 						const fileContent = readFileForFlag(argv.file);
 						formData.append(
 							"file",
@@ -139,6 +146,24 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 								) ?? ""
 							)
 						);
+					if (argv["source"] !== undefined) {
+						const value = String(argv["source"]);
+						if (value.startsWith("@")) {
+							const filePath = value.slice(1);
+							const fileContent = resolveFileToken(
+								value,
+								"source",
+								"binary"
+							) as Buffer<ArrayBuffer>;
+							formData.append(
+								"source",
+								new Blob([fileContent]),
+								filePath.split(/[\\/]/).filter(Boolean).pop()
+							);
+						} else {
+							formData.append("source", new Blob([value]), "source");
+						}
+					}
 					const result = await withProgress(`Creating`, async () =>
 						requestApi<unknown>(
 							client,
@@ -151,7 +176,7 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 					return;
 				}
 
-				if (argv.body) {
+				if (argv.body !== undefined) {
 					// Endpoint does not accept application/json — send --body as raw bytes,
 					// resolving @file references as binary file contents.
 					const bodyData = resolveFileToken(argv.body, "body", "binary");

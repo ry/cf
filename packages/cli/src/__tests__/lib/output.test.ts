@@ -124,6 +124,7 @@ describe("formatOutput", () => {
 
 	it("keeps piped JSON plain when FORCE_COLOR is set", () => {
 		setStdinTTY(true);
+		setStderrTTY(true);
 		setStdoutTTY(false);
 		withForcedColor(() => {
 			formatOutput({ name: "db" });
@@ -150,8 +151,22 @@ describe("formatOutput", () => {
 		});
 	});
 
+	it("keeps JSON plain when stdin can't be opened", () => {
+		setStdoutTTY(true);
+		const stdin = vi.spyOn(process, "stdin", "get").mockImplementation(() => {
+			throw new Error("TTY initialization failed");
+		});
+		try {
+			withForcedColor(() => formatOutput({ name: "db" }));
+		} finally {
+			stdin.mockRestore();
+		}
+		expect(logSpy).toHaveBeenCalledWith('{\n  "name": "db"\n}');
+	});
+
 	it("highlights JSON on an interactive TTY when FORCE_COLOR is set", () => {
 		setStdinTTY(true);
+		setStderrTTY(false);
 		setStdoutTTY(true);
 		withForcedColor(() => {
 			formatOutput({ name: "db" });
@@ -242,12 +257,50 @@ describe("formatOutput", () => {
 			result_info: { page: 1, total_pages: 1 },
 		});
 		expect(loggedJson()).toEqual([{ id: "one" }, { id: "two" }]);
+		expect(stderrWrite.join("")).toBe(
+			'result_info: {"page":1,"total_pages":1}\n'
+		);
+	});
+
+	it.each([
+		{ cursor: "next+/page=\n\u001b[31m", total_count: 101 },
+		{ page: 1, per_page: 5, count: 0, total_count: 0 },
+		{ cursors: { before: null, after: "next-page" }, has_more: true },
+		{ cursor: null },
+	])("prints all result_info fields on redirected stderr (%j)", (info) => {
+		setStderrTTY(false);
+		setStdoutTTY(false);
+		withForcedColor(() => {
+			formatOutput({ result: [], result_info: info });
+		});
+
+		expect(loggedJson()).toEqual([]);
+		expect(stderrWrite.join("")).toBe(`result_info: ${JSON.stringify(info)}\n`);
+	});
+
+	it.each([undefined, null, {}, "", 0])(
+		"does not print absent or empty result_info (%j)",
+		(info) => {
+			formatOutput({ result: [], result_info: info });
+			expect(loggedJson()).toEqual([]);
+			expect(stderrWrite).toEqual([]);
+		}
+	);
+
+	it("suppresses payload and pagination metadata when quiet", () => {
+		formatOutput(
+			{ result: [{ id: "one" }], result_info: { cursor: "next-page" } },
+			{ quiet: true }
+		);
+		expect(logSpy).not.toHaveBeenCalled();
+		expect(stderrWrite).toEqual([]);
 	});
 
 	it("preserves ordinary objects with a result field", () => {
 		const data = { result: "complete", result_info: { duration: 10 } };
 		formatOutput(data);
 		expect(loggedJson()).toEqual(data);
+		expect(stderrWrite).toEqual([]);
 	});
 
 	it("stays silent on stdout for a null result (no literal 'null')", () => {
@@ -265,6 +318,25 @@ describe("formatOutput", () => {
 		const err = stderrWrite.join("");
 		expect(err).toContain("✓");
 		expect(err).toContain("Deleted namespace");
+	});
+
+	it("hides the ✓ line under --quiet", () => {
+		setStderrTTY(true);
+		const argv = process.argv;
+		process.argv = [
+			argv[0] ?? "node",
+			"cf",
+			"kv",
+			"namespaces",
+			"delete",
+			"--quiet",
+		];
+		try {
+			formatOutput(null, { successLabel: "Deleted namespace" });
+		} finally {
+			process.argv = argv;
+		}
+		expect(stderrWrite.join("")).toBe("");
 	});
 
 	it("treats undefined like null", () => {

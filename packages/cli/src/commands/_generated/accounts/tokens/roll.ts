@@ -79,17 +79,16 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						message: `Rolling this token will invalidate the current secret and generate a new one. Any integrations using the current secret will stop working.`,
 					}))
 				) {
-					process.stderr.write("Aborted.\n");
 					return;
 				}
 
-				const result = await withProgress(`Deleting`, async () =>
+				const result = await withProgress(`Updating`, async () =>
 					client.send(operation, {
 						account_id: accountId,
 						token_id: argv["token-id"],
 					})
 				);
-				formatOutput(result, { successLabel: `Deleted` });
+				formatOutput(result, { successLabel: `Updated` });
 			}
 		),
 };

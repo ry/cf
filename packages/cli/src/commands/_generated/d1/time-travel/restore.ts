@@ -94,18 +94,17 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						message: `This reverts the D1 database to a previous point in time. Data written after the bookmark will be lost.`,
 					}))
 				) {
-					process.stderr.write("Aborted.\n");
 					return;
 				}
 
-				const result = await withProgress(`Deleting`, async () =>
+				const result = await withProgress(`Processing`, async () =>
 					client.send(operation, {
 						account_id: accountId,
 						database_id: argv["database-id"],
 						...queryParams,
 					})
 				);
-				formatOutput(result, { successLabel: `Deleted` });
+				formatOutput(result, { successLabel: `Done` });
 			}
 		),
 };

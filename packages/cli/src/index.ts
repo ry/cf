@@ -19,6 +19,11 @@ import {
 	shouldApplyCloudflareDotEnv,
 } from "./lib/dotenv.js";
 import { handleError } from "./lib/errors.js";
+import {
+	BUILTIN_OPTIONS,
+	GLOBAL_OPTIONS,
+	GLOBAL_OPTION_NAMES,
+} from "./lib/global-options.js";
 import { withHandWrittenDryRun } from "./lib/hand-written-dry-run.js";
 import { lazyCommand, type LazyCommandImporter } from "./lib/lazy-command.js";
 import { disposeLocalRuntime } from "./lib/local.js";
@@ -42,89 +47,33 @@ import type { Options } from "yargs";
 
 export { CliExit } from "./lib/cli-exit.js";
 
-const GLOBAL_OPTIONS = {
-	quiet: {
-		type: "boolean",
-		alias: "q",
-		description: "Suppress non-essential output",
-		global: true,
-		default: false,
-	},
-	zone: {
-		type: "string",
-		alias: "z",
-		description: "Zone ID or domain name (overrides CLOUDFLARE_ZONE_ID)",
-		global: true,
-	},
-	profile: {
-		type: "string",
-		description: "Use a specific auth profile",
-		requiresArg: true,
-		global: true,
-	},
-	mode: {
-		type: "string",
-		alias: "m",
-		description: "Mode used to evaluate project configuration",
-		requiresArg: true,
-		global: true,
-		coerce: (mode) => {
-			if (Array.isArray(mode)) {
-				throw new Error("--mode can only be specified once.");
-			}
-			if (mode === "") {
-				throw new Error("--mode requires a non-empty value.");
-			}
-			return mode;
-		},
-	},
-	"temporary-account": {
-		type: "boolean",
-		description:
-			"Create or reuse a temporary account when no Cloudflare credentials are available",
-		global: true,
-		default: false,
-		hidden: true,
-	},
-	// Errors never include the event code: it is a shared secret for an event.
-	"event-code": {
-		type: "string",
-		description:
-			"Specify the event code to use when creating a temporary account for an event",
-		requiresArg: true,
-		global: true,
-		hidden: true,
-		coerce: (eventCode: string | string[]) => {
-			if (Array.isArray(eventCode)) {
-				throw new Error("--event-code expects a single value.");
-			}
-			const trimmed = eventCode.trim();
-			if (!trimmed) {
-				throw new Error("--event-code cannot be empty.");
-			}
-			return trimmed;
-		},
-	},
-	// `--local` runs the command against cf's on-disk Miniflare state
-	// instead of the production API: cf spawns its own Miniflare over
-	// `--persist-to` (default `~/.config/cloudflare/state/v3`), dispatches to the
-	// local-explorer worker, and disposes it before exiting. No dev
-	// session needs to be running. Endpoints the explorer doesn't
-	// implement surface as a "no local equivalent" error.
-	local: {
-		type: "boolean",
-		description: "Use local resource simulations",
-		global: true,
-		default: false,
-	},
-	"persist-to": {
-		type: "string",
-		description:
-			"Directory holding local persisted state (default: ~/.config/cloudflare/state)",
-		requiresArg: true,
-		global: true,
-	},
-} satisfies Record<string, Options>;
+function globalOptionNames(name: string, option: Options): string[] {
+	const alias = option.alias;
+	return [
+		name,
+		...(Array.isArray(alias) ? alias : alias === undefined ? [] : [alias]),
+	];
+}
+
+function flagToken(name: string): string {
+	return name.length === 1 ? `-${name}` : `--${name}`;
+}
+
+const ROOT_OPTION_NAMES = new Set(GLOBAL_OPTION_NAMES);
+
+const GLOBAL_FLAGS_LIST = Object.entries<Options>({
+	...GLOBAL_OPTIONS,
+	...BUILTIN_OPTIONS,
+})
+	.filter(([, option]) => !option.hidden)
+	.map(
+		([name, option]) =>
+			`  ${globalOptionNames(name, option)
+				.sort((left, right) => left.length - right.length)
+				.map(flagToken)
+				.join(", ")}`
+	)
+	.join("\n");
 
 function globalFlagTakesValue(arg: string, nextArg?: string): boolean {
 	return Object.entries<Options>(GLOBAL_OPTIONS).some(([name, option]) => {
@@ -135,14 +84,8 @@ function globalFlagTakesValue(arg: string, nextArg?: string): boolean {
 		) {
 			return false;
 		}
-		const alias = option.alias;
-		const aliases = Array.isArray(alias)
-			? alias
-			: alias === undefined
-				? []
-				: [alias];
-		return [name, ...aliases].some(
-			(flag) => arg === (flag.length === 1 ? `-${flag}` : `--${flag}`)
+		return globalOptionNames(name, option).some(
+			(flag) => arg === flagToken(flag)
 		);
 	});
 }
@@ -198,10 +141,11 @@ function decorateHelp(help: string, command: string | undefined): string {
 /**
  * Print a one-line hint about shell completions on the first TTY run.
  *
- * Persists `completions.prompted: true` in cf's global state so
- * subsequent runs stay silent. Suppressed when stderr isn't a TTY,
- * `--quiet` is set, the user is running `cf complete`, or they've
- * already been hinted. Modelled after `gh` / `git`.
+ * Persists `completions.prompted: true` in cf's global state before
+ * printing, so a state file cf cannot write suppresses the hint rather
+ * than repeating it on every run. Suppressed when stderr isn't a TTY,
+ * in CI, when `--quiet` is set, the user is running `cf complete`, or
+ * they've already been hinted. Modelled after `gh` / `git`.
  */
 async function maybeShowCompletionsHint(quiet = false): Promise<void> {
 	if (!process.stderr.isTTY) {
@@ -213,16 +157,19 @@ async function maybeShowCompletionsHint(quiet = false): Promise<void> {
 	if (commandName() === "complete") {
 		return;
 	}
+	const { isCI } = await import("./lib/interactive.js");
+	if (isCI) {
+		return;
+	}
 	const { readState, updateState } = await import("./lib/state.js");
 	if (readState().completions?.prompted) {
 		return;
 	}
-	process.stderr.write(
-		theme.muted(
-			"Tip: run `cf complete <bash|zsh|fish>` to install shell completions.\n"
-		)
-	);
 	updateState({ completions: { prompted: true } });
+	const { log } = await import("./lib/ui/log.js");
+	log.info(
+		`Tip: run ${theme.code("cf complete <bash|zsh|fish|powershell>")} to install shell completions.`
+	);
 }
 
 let telemetryModulePromise: Promise<typeof TelemetryModule> | undefined;
@@ -277,10 +224,9 @@ async function maybeShowTelemetryNotice(quiet = false): Promise<void> {
 		return;
 	}
 
-	process.stderr.write(
-		theme.muted(
-			"Cloudflare collects anonymous cf usage telemetry. Run `cf cli telemetry disable` to opt out.\n"
-		)
+	const { log } = await import("./lib/ui/log.js");
+	log.info(
+		`Cloudflare collects anonymous cf usage telemetry. Run ${theme.code("cf cli telemetry disable")} to opt out.`
 	);
 	setBannerLastShown(version);
 }
@@ -392,6 +338,49 @@ function resolvedCommandName(yargsInstance: unknown): string | undefined {
 	} catch {
 		return undefined;
 	}
+}
+
+// Automatic help skips strict validation, so account for declared positionals
+// before treating the next parsed token as an unknown command.
+function unresolvedHelpCommands(yargsInstance: unknown): string[] {
+	const instance = yargsInstance as {
+		parsed: false | { argv: { _: unknown[]; help?: unknown } };
+		getInternalMethods(): {
+			getContext(): { commands: unknown; fullCommands: unknown };
+		};
+	};
+	const parsed = instance.parsed;
+	if (!parsed || parsed.argv.help !== true) {
+		return [];
+	}
+	const { commands, fullCommands } = instance.getInternalMethods().getContext();
+	if (!Array.isArray(commands) || !Array.isArray(fullCommands)) {
+		return [];
+	}
+	const currentSyntax = fullCommands.at(-1);
+	const positionals =
+		typeof currentSyntax === "string"
+			? (currentSyntax.match(/(?:<[^>]+>|\[[^\]]+\])/g) ?? [])
+			: [];
+	if (
+		positionals.some((positional) => positional.slice(1, -1).endsWith(".."))
+	) {
+		return [];
+	}
+	return parsed.argv._.slice(commands.length + positionals.length).map(String);
+}
+
+class CliUsageError extends Error {
+	constructor(
+		message: string,
+		readonly helpCommand: string
+	) {
+		super(message);
+	}
+}
+
+function helpCommandFor(command: string | undefined): string {
+	return `cf${command ? ` ${command}` : ""} --help`;
 }
 
 function excludesTelemetry(command: string): boolean {
@@ -652,25 +641,11 @@ async function prepareUpdateCheck(): Promise<PreparedUpdateCheck | undefined> {
  *   --local               Route via a cf-spawned Miniflare session
  *   --persist-to          Directory holding the local persisted state
  *
- * ## Reserved (future)
+ * ## Reserved
  *
- * The following names are reserved for upcoming features. Do NOT
- * register them as per-command or new cross-product flags. If a
- * generated command's OpenAPI schema collides, forge / the generator
- * must rename or scope the op-level flag rather than shadow these.
- *
- *   --remote              Force production routing when local
- *                         auto-discovery is the default.
- *   --cwd                 Run as if from a different working
- *                         directory.
- *   --config, -c          Explicit Cloudflare config-file path.
- *   --experimental-*      Namespace for opt-in feature gates.
- *   --json                Output-format toggle. Output is all-JSON
- *   --ndjson              today; these names are claimed so a future
- *   --pretty              change of default doesn't collide.
- *
- * See `AGENTS.md` (root) and `packages/cli/AGENTS.md` for the same
- * list in prose form.
+ * `FUTURE_OPTION_NAMES` and `flagOwnership` in `lib/global-options.ts`
+ * list the names cf reserves beyond these, and why. Reserve a new
+ * cross-cutting flag there before shipping it.
  */
 export function buildCli(rawArgs: string[], options: BuildCliOptions = {}) {
 	const {
@@ -705,13 +680,13 @@ export function buildCli(rawArgs: string[], options: BuildCliOptions = {}) {
 			"Positionals:": orange("Positionals"),
 			"Examples:": orange("Examples"),
 		})
-		.help("help", "Show help")
-		.alias("h", "help")
+		.help("help", BUILTIN_OPTIONS.help.description)
+		.alias(BUILTIN_OPTIONS.help.alias, "help")
 		.options(GLOBAL_OPTIONS)
 		// Bucket the cross-cutting flags into one block so they don't
 		// intermix with per-command options on each --help screen.
 		.group(
-			[...Object.keys(GLOBAL_OPTIONS), "help", "version"],
+			[...Object.keys(GLOBAL_OPTIONS), ...Object.keys(BUILTIN_OPTIONS)],
 			orange("Global flags")
 		);
 
@@ -812,8 +787,8 @@ export function buildCli(rawArgs: string[], options: BuildCliOptions = {}) {
 		.strictCommands()
 		.strictOptions()
 		.recommendCommands()
-		.version(version)
-		.alias("v", "version")
+		.version("version", BUILTIN_OPTIONS.version.description, version)
+		.alias(BUILTIN_OPTIONS.version.alias, "version")
 		.epilogue("For more information, visit https://developers.cloudflare.com/")
 		// Don't call process.exit on parse failures — surface as a thrown
 		// error so callers (bin/cf, dev.ts, tests) can handle it.
@@ -827,6 +802,21 @@ export function buildCli(rawArgs: string[], options: BuildCliOptions = {}) {
 			}
 			if (err) {
 				throw err;
+			}
+			// Yargs checks the missing command before strict options. Let its
+			// next validation report an unknown global flag when one is present.
+			if (msg === "You need to specify a command" && cli.parsed) {
+				const hasUnknownOption = Object.keys(cli.parsed.argv).some(
+					(name) =>
+						name !== "_" &&
+						name !== "$0" &&
+						!ROOT_OPTION_NAMES.has(
+							name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)
+						)
+				);
+				if (hasUnknownOption) {
+					return;
+				}
 			}
 			// Yargs considers hidden commands when matching recommendations.
 			// Its usage list contains only commands visible at the current depth,
@@ -861,26 +851,40 @@ export function buildCli(rawArgs: string[], options: BuildCliOptions = {}) {
 				yargsInstance.showHelp("log");
 				return;
 			}
-			// Anything else (notably yargs' default "Not enough non-option
-			// arguments" from a *leaf* command invoked without its
-			// required positional) is a genuine usage error. Print the
-			// command's help first so the user sees valid usage, then
-			// throw so the error block renders below it (closer to the
-			// prompt).
-			const error = new Error(msg);
-			const resolutionFailure = commandResolutionFailure(cli, msg);
+			const error = new CliUsageError(msg, helpCommandFor(resolvedCommand));
+			const resolutionFailure =
+				commandResolutionFailure(cli, msg) ??
+				(resolvedCommand === undefined && /^Unknown arguments?:/.test(msg)
+					? commandResolutionFailure(cli, MISSING_COMMAND_MESSAGE)
+					: undefined);
 			if (resolutionFailure) {
 				onCommandResolutionFailed?.(resolutionFailure, error);
 			}
-			yargsInstance.showHelp("error");
 			throw error;
 		});
 
 	// Every depth can replace `.usage()`, so add the notice at the point
 	// yargs emits help rather than relying on a root-level usage string.
 	const showHelp = cli.showHelp.bind(cli);
-	cli.showHelp = (level?: string | ((help: string) => void)) =>
-		showHelp((help) => {
+	cli.showHelp = (level?: string | ((help: string) => void)) => {
+		// Runtime-schema handlers render their own help with showHelp("log").
+		const unknownCommands =
+			typeof level === "function" ? unresolvedHelpCommands(cli) : [];
+		if (unknownCommands.length > 0) {
+			const error = new CliUsageError(
+				`Unknown command: ${unknownCommands[0]}`,
+				helpCommandFor(resolvedCommandName(cli))
+			);
+			const resolutionFailure = commandResolutionFailure(cli, error.message);
+			if (resolutionFailure) {
+				onCommandResolutionFailed?.(
+					{ ...resolutionFailure, unknownTokens: unknownCommands },
+					error
+				);
+			}
+			throw error;
+		}
+		return showHelp((help) => {
 			const command = resolvedCommandName(cli);
 			if (command !== undefined) {
 				onCommandResolved?.(command);
@@ -895,6 +899,7 @@ export function buildCli(rawArgs: string[], options: BuildCliOptions = {}) {
 				console.error(message);
 			}
 		});
+	};
 	const getHelp = cli.getHelp.bind(cli);
 	cli.getHelp = async () =>
 		decorateHelp(await getHelp(), resolvedCommandName(cli));
@@ -1026,7 +1031,22 @@ export async function main(): Promise<void> {
 			resolvedCommand ?? resolvedCommandName(cli),
 			failure
 		);
-		throw handleError(err);
+		const handledError = handleError(err);
+		if (err instanceof CliUsageError) {
+			if (
+				err.helpCommand === "cf --help" &&
+				/^Unknown arguments?:/.test(err.message)
+			) {
+				console.error(`\nGlobal flags:\n${GLOBAL_FLAGS_LIST}`);
+			}
+			console.error(
+				"\n" +
+					theme.italic(
+						`For more information, run ${theme.code(err.helpCommand)}`
+					)
+			);
+		}
+		throw handledError;
 	} finally {
 		dispose();
 		// Miniflare keeps workerd and a loopback server alive. The disposer is

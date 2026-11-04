@@ -108,16 +108,15 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						message: `This operation may delete the selected content policies and stop evaluating emails against their patterns.`,
 					}))
 				) {
-					process.stderr.write("Aborted.\n");
 					return;
 				}
 
 				if (argv.body) {
 					const bodyData = parseBody(argv.body);
-					const result = await withProgress(`Deleting`, async () =>
+					const result = await withProgress(`Processing`, async () =>
 						client.send(operation, { body: bodyData, account_id: accountId })
 					);
-					formatOutput(result, { successLabel: `Deleted` });
+					formatOutput(result, { successLabel: `Done` });
 					return;
 				}
 				if (argv["deletes"] === undefined) {
@@ -148,10 +147,10 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 					posts: parseObjectArray(argv["posts"], "posts"),
 					puts: parseObjectArray(argv["puts"], "puts"),
 				});
-				const result = await withProgress(`Deleting`, async () =>
+				const result = await withProgress(`Processing`, async () =>
 					client.send(operation, { body: bodyData, account_id: accountId })
 				);
-				formatOutput(result, { successLabel: `Deleted` });
+				formatOutput(result, { successLabel: `Done` });
 			}
 		),
 };

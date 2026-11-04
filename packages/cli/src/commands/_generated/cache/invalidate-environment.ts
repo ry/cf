@@ -84,31 +84,30 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						message: `This operation marks the selected content in the environment's cache as stale.`,
 					}))
 				) {
-					process.stderr.write("Aborted.\n");
 					return;
 				}
 
 				if (argv.body) {
 					const bodyData = parseBody(argv.body);
-					const result = await withProgress(`Deleting`, async () =>
+					const result = await withProgress(`Processing`, async () =>
 						client.send(operation, {
 							body: bodyData,
 							zone_id: zoneId,
 							environment_id: argv["environment-id"],
 						})
 					);
-					formatOutput(result, { successLabel: `Deleted` });
+					formatOutput(result, { successLabel: `Done` });
 					return;
 				}
 
-				const result = await withProgress(`Deleting`, async () =>
+				const result = await withProgress(`Processing`, async () =>
 					requestApi<unknown>(
 						client,
 						"POST",
 						`/zones/${argv.zoneId}/environments/${encodeURIComponent(String(argv["environment-id"]))}/invalidate_cache`
 					)
 				);
-				formatOutput(result, { successLabel: `Deleted` });
+				formatOutput(result, { successLabel: `Done` });
 			}
 		),
 };

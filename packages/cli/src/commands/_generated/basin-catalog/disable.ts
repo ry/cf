@@ -79,17 +79,16 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						message: `This operation turns off the data catalog for the bucket. Existing namespace or table state remains, but writes stop.`,
 					}))
 				) {
-					process.stderr.write("Aborted.\n");
 					return;
 				}
 
-				const result = await withProgress(`Deleting`, async () =>
+				const result = await withProgress(`Processing`, async () =>
 					client.send(operation, {
 						account_id: accountId,
 						bucket_name: argv["bucket-name"],
 					})
 				);
-				formatOutput(result, { successLabel: `Deleted` });
+				formatOutput(result, { successLabel: `Done` });
 			}
 		),
 };

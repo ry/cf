@@ -155,13 +155,12 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						message: `This starts a background job that either permanently deletes every object under the given prefix (every object in the bucket for an empty prefix) or migrates every object in the bucket between storage classes.`,
 					}))
 				) {
-					process.stderr.write("Aborted.\n");
 					return;
 				}
 
 				if (argv.body) {
 					const bodyData = parseBody(argv.body);
-					const result = await withProgress(`Deleting`, async () =>
+					const result = await withProgress(`Processing`, async () =>
 						requestApi<unknown>(
 							client,
 							"POST",
@@ -172,7 +171,7 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 							}
 						)
 					);
-					formatOutput(result, { successLabel: `Deleted` });
+					formatOutput(result, { successLabel: `Done` });
 					return;
 				}
 				if (argv["job-type"] === undefined) {
@@ -220,7 +219,7 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						["sourceStorageClass"],
 						argv["source-storage-class"]
 					);
-				const result = await withProgress(`Deleting`, async () =>
+				const result = await withProgress(`Processing`, async () =>
 					requestApi<unknown>(
 						client,
 						"POST",
@@ -231,7 +230,7 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						}
 					)
 				);
-				formatOutput(result, { successLabel: `Deleted` });
+				formatOutput(result, { successLabel: `Done` });
 			}
 		),
 };

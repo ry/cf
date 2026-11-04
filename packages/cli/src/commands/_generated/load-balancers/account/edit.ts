@@ -28,7 +28,7 @@ import { runWithTelemetry } from "#lib/telemetry/index.js";
 function builder(yargs: Argv<CommonYargsOptions>) {
 	return yargs
 		.usage(
-			"$0 load-balancers account edit <load-balancer-id>\n\nApply changes to an existing account or zone-scoped load balancer, overwriting the supplied properties."
+			"$0 load-balancers account edit <load-balancer-id>\n\nApply changes to an existing account or zone-scoped load balancer, overwriting the supplied properties.\n\nRuns against your account. Pass --zone to run against a zone instead. CLOUDFLARE_ZONE_ID is ignored."
 		)
 		.positional("load-balancer-id", {
 			type: "string",
@@ -212,8 +212,7 @@ function builder(yargs: Argv<CommonYargsOptions>) {
 		})
 		.option("body", {
 			type: "string",
-			description:
-				"The editable properties shared by load balancer create, update, and patch requests. Operations layer their own \`required\` constraints on top via \`allOf\`.",
+			description: "Raw JSON request body (bypasses individual flags)",
 		});
 }
 

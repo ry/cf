@@ -108,13 +108,12 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						message: `This replaces the R2 bucket's lock rules. Removing or shortening retention can allow objects to be overwritten or deleted.`,
 					}))
 				) {
-					process.stderr.write("Aborted.\n");
 					return;
 				}
 
 				if (argv.body) {
 					const bodyData = parseBody(argv.body);
-					const result = await withProgress(`Deleting`, async () =>
+					const result = await withProgress(`Updating`, async () =>
 						requestApi<unknown>(
 							client,
 							"PUT",
@@ -125,7 +124,7 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 							}
 						)
 					);
-					formatOutput(result, { successLabel: `Deleted` });
+					formatOutput(result, { successLabel: `Updated` });
 					return;
 				}
 
@@ -137,7 +136,7 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						["rules"],
 						parseObjectArray(argv["rules"], "rules")
 					);
-				const result = await withProgress(`Deleting`, async () =>
+				const result = await withProgress(`Updating`, async () =>
 					requestApi<unknown>(
 						client,
 						"PUT",
@@ -148,7 +147,7 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						}
 					)
 				);
-				formatOutput(result, { successLabel: `Deleted` });
+				formatOutput(result, { successLabel: `Updated` });
 			}
 		),
 };

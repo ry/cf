@@ -87,18 +87,17 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						message: `This operation stops the active livestream. Viewers lose the broadcast immediately.`,
 					}))
 				) {
-					process.stderr.write("Aborted.\n");
 					return;
 				}
 
-				const result = await withProgress(`Deleting`, async () =>
+				const result = await withProgress(`Processing`, async () =>
 					client.send(operation, {
 						account_id: accountId,
 						app_id: argv["app-id"],
 						meeting_id: argv["meeting-id"],
 					})
 				);
-				formatOutput(result, { successLabel: `Deleted` });
+				formatOutput(result, { successLabel: `Done` });
 			}
 		),
 };

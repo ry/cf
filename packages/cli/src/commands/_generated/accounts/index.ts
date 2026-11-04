@@ -3,12 +3,13 @@ import $billing from "./billing/index.js";
 import $categories from "./categories/index.js";
 import $create from "./create.js";
 import $delete from "./delete.js";
+import $entitlements from "./entitlements/index.js";
 import $get from "./get.js";
 import $list from "./list.js";
 import $logs from "./logs/index.js";
 import $members from "./members/index.js";
 import $move from "./move.js";
-import $organization from "./organization/index.js";
+import $organizations from "./organizations/index.js";
 import $profile from "./profile/index.js";
 import $subscriptions from "./subscriptions/index.js";
 import $tokens from "./tokens/index.js";
@@ -38,9 +39,10 @@ const command: CommandModule<CommonYargsOptions> = {
 			.command($applications)
 			.command($billing)
 			.command($categories)
+			.command($entitlements)
 			.command($logs)
 			.command($members)
-			.command($organization)
+			.command($organizations)
 			.command($profile)
 			.command($subscriptions)
 			.command($tokens)

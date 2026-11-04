@@ -10,15 +10,18 @@ import {
 	derive,
 	downgradeOptionalParents,
 	isBody,
+	isZonePathParam,
+	multipartFileFlagDescription,
 	optionDefaults,
 	options as optionArgs,
 	positionals,
 	scalar,
 	WORKER_ALIASES,
 } from "./args.js";
+import { requiresConfirmation } from "./confirmation.js";
 import { builderLines } from "./emit/builder.js";
-import { handler, imports } from "./emit/handler.js";
-import { context, escapeSingle, outputKind } from "./emit/index.js";
+import { ACCOUNT_OR_ZONE_HELP, handler, imports } from "./emit/handler.js";
+import { context, escapeSingle } from "./emit/index.js";
 import { operationLiteral, operationPath, usesPathTag } from "./emit/sdk.js";
 import {
 	type DryRun,
@@ -39,12 +42,17 @@ import {
 	type Obj,
 	obj,
 	quote,
+	stringify,
 	stringifyPretty,
 	trimEndMatches,
 	type Value,
 } from "./js.js";
+import {
+	type OperationInfo,
+	outputKind,
+	type ParameterInfo,
+} from "./operation.js";
 import type { Command, Group, Item, Method } from "./commands.js";
-import type { OperationInfo, ParameterInfo } from "./operation.js";
 
 /** A generated file. */
 export interface Out {
@@ -90,17 +98,22 @@ export function summary(method: Method): string {
 	return first === "" ? description : first;
 }
 
-/** `getLeafUsage`: the usage of a leaf command, followed by its full description. */
+/**
+ * `getLeafUsage`: the usage of a leaf command, followed by its full
+ * description and, for an account-or-zone command, how it picks its scope.
+ */
 export function leafUsage(
 	method: Method,
 	resource: string,
 	group: string | undefined,
-	command: string
+	command: string,
+	accountOrZone = false
 ): string {
 	const segments =
 		group === undefined ? [] : group.split("/").filter((s) => s !== "");
 	const path = ["$0", resource, ...segments, command];
-	return `${path.join(" ")}\n\n${method.description.trim()}`;
+	const usage = `${path.join(" ")}\n\n${method.description.trim()}`;
+	return accountOrZone ? `${usage}\n\n${ACCOUNT_OR_ZONE_HELP}` : usage;
 }
 
 /**
@@ -264,7 +277,7 @@ class Walk {
 		});
 		const optionMetas: Value[] = options.map((a) => {
 			const m = obj();
-			m["name"] = a.name;
+			m["name"] = kebab(a.name);
 			m["type"] = scalar(a.type);
 			m["required"] = a.required;
 			m["description"] = a.description;
@@ -292,6 +305,18 @@ class Walk {
 				["default", false],
 			])
 		);
+		if (requiresConfirmation(method, op)) {
+			optionMetas.push(
+				obj([
+					["name", "force"],
+					["type", "boolean"],
+					["alias", "f"],
+					["required", false],
+					["description", "Skip confirmation (useful in scripts and CI)"],
+					["default", false],
+				])
+			);
+		}
 		if (derived.hasBody) {
 			optionMetas.push(
 				obj([
@@ -309,6 +334,17 @@ class Walk {
 					["type", "string"],
 					["required", false],
 					["description", "Path to a file to upload as the request body"],
+				])
+			);
+		}
+		for (const { field, flag } of derived.multipartFileFields) {
+			optionMetas.push(
+				obj([
+					["name", flag],
+					["type", "string"],
+					...(field.type === "array" ? [["array", true] as const] : []),
+					["required", false],
+					["description", multipartFileFlagDescription(field)],
 				])
 			);
 		}
@@ -338,14 +374,27 @@ class Walk {
 		}
 		const derived = derive(method, resource, op);
 		downgradeOptionalParents(derived);
-		const params = (list: readonly ParameterInfo[]): Value[] =>
-			list.map((p) =>
-				obj([
-					["name", p.name],
-					["type", p.type],
-					["required", p.required],
-				])
-			);
+		const params = (
+			list: readonly ParameterInfo[],
+			location: "path" | "query"
+		): Value[] =>
+			list.map((p) => {
+				const arg = derived.args.find(
+					(a) => a.origin.in === location && a.origin.name === p.name
+				);
+				const entry = obj([["name", p.name]]);
+				if (arg !== undefined) {
+					entry["flag"] = kebab(arg.name);
+				} else if (location === "path" && isZonePathParam(p.name)) {
+					entry["flag"] = "zone";
+				}
+				if (arg?.positional === true) {
+					entry["positional"] = true;
+				}
+				entry["type"] = p.type;
+				entry["required"] = p.required;
+				return entry;
+			});
 		const fields: Value[] = derived.args.filter(isBody).map((a) =>
 			obj([
 				["name", a.name],
@@ -358,8 +407,8 @@ class Walk {
 			["operationId", method.operationId],
 			["httpMethod", op.method.toUpperCase()],
 			["path", op.path],
-			["pathParams", params(op.pathParams)],
-			["queryParams", params(op.queryParams)],
+			["pathParams", params(op.pathParams, "path")],
+			["queryParams", params(op.queryParams, "query")],
 			["hasRequestBody", op.hasRequestBody],
 			["requestBodyFields", fields],
 		]);
@@ -383,26 +432,30 @@ class Walk {
 		const handlerLines = handler(ctx);
 		const importSet = imports(ctx);
 		const builder = builderLines(ctx);
-		const usage = leafUsage(method, resource, group, command);
+		const usage = leafUsage(
+			method,
+			resource,
+			group,
+			command,
+			ctx.hasAccountOrZoneScope
+		);
 		const builderBody = `return yargs\n      .usage(${quote(usage)})\n${builder.join("\n")};`;
-		const declarations = "type Args = InferArgs<typeof builder>;\n";
+		const declarations =
+			"type Args = InferArgs<typeof builder>;\n" +
+			((op.bodyUnions?.length ?? 0) > 0 && ctx.derived.hasBodyParams
+				? `const bodyUnions: Parameters<typeof validateBodyUnions>[1] = ${stringify(op.bodyUnions ?? [])};\n`
+				: "");
 		const telemetryPath =
 			group !== undefined && group !== ""
 				? `${resource} ${group.replaceAll("/", " ")} ${method.name}`
 				: `${resource} ${method.name}`;
-		const hasForce = ctx.derived.args.some((a) => a.name === "force");
-		const generatedForce =
-			(op.method === "delete" ||
-				(method.requireConfirmation !== undefined &&
-					method.requireConfirmation !== "")) &&
-			!hasForce;
 		const safeFlags = telemetrySafeFlags(
 			ctx.derived.args,
-			generatedForce,
+			ctx.isDelete,
 			ctx.outputKind === "binary"
 		);
 		const safe = `[${safeFlags.map((f) => `'${escapeSingle(f)}'`).join(", ")}]`;
-		const aliases = generatedForce
+		const aliases = ctx.isDelete
 			? ", shortFlagAliases: { f: { canonical: 'force', type: 'boolean' } }"
 			: "";
 		return `/**

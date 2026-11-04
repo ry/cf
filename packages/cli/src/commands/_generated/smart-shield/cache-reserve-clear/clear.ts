@@ -72,14 +72,13 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						message: `This operation permanently clears Cache Reserve for this zone and cannot be undone.`,
 					}))
 				) {
-					process.stderr.write("Aborted.\n");
 					return;
 				}
 
-				const result = await withProgress(`Deleting`, async () =>
+				const result = await withProgress(`Processing`, async () =>
 					client.send(operation, { zone_id: zoneId })
 				);
-				formatOutput(result, { successLabel: `Deleted` });
+				formatOutput(result, { successLabel: `Done` });
 			}
 		),
 };

@@ -100,16 +100,15 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						message: `This operation destructively removes a permission entry.`,
 					}))
 				) {
-					process.stderr.write("Aborted.\n");
 					return;
 				}
 
 				if (argv.body) {
 					const bodyData = parseBody(argv.body);
-					const result = await withProgress(`Deleting`, async () =>
+					const result = await withProgress(`Updating`, async () =>
 						client.send(operation, { body: bodyData, account_id: accountId })
 					);
-					formatOutput(result, { successLabel: `Deleted` });
+					formatOutput(result, { successLabel: `Updated` });
 					return;
 				}
 
@@ -122,10 +121,10 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 					),
 					feed_id: argv["feed-id"],
 				});
-				const result = await withProgress(`Deleting`, async () =>
+				const result = await withProgress(`Updating`, async () =>
 					client.send(operation, { body: bodyData, account_id: accountId })
 				);
-				formatOutput(result, { successLabel: `Deleted` });
+				formatOutput(result, { successLabel: `Updated` });
 			}
 		),
 };

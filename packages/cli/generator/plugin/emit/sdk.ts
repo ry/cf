@@ -79,6 +79,7 @@ export function canEmitTypedCall(ctx: Ctx): boolean {
 	const bodyOptional =
 		w.hasRequest &&
 		!w.bodyRequired &&
+		(!ctx.op.requestBodyMandatory || w.body !== undefined) &&
 		!ctx.op.headerParams.some((p) => p.required) &&
 		ctx.op.queryParams.every((p) => !p.required || queryNames.includes(p.name));
 	const hasNoWireBody = !ctx.derived.hasBody || bodyOptional;
@@ -141,7 +142,6 @@ export function makesTypedCall(ctx: Ctx): boolean {
 	const bypass =
 		d.hasBody &&
 		ctx.op.requestContentTypes.includes("application/json") &&
-		(ctx.op.maxItems === undefined || ctx.op.maxItems <= 0) &&
 		canEmitTypedJsonBodyCall(ctx);
 	const assembled = d.hasBodyParams && canEmitTypedBodyCall(ctx);
 	const plain = !d.hasBodyParams && !ctx.hasHeaders && canEmitTypedCall(ctx);

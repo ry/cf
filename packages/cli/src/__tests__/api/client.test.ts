@@ -11,6 +11,7 @@ import {
 	type ClientOptions,
 	type Operation,
 	path,
+	getResultInfo,
 } from "../../api/index.js";
 
 interface Sent {
@@ -176,6 +177,32 @@ describe("send", () => {
 		assert.deepEqual(result, { result: [1], result_info: undefined });
 	});
 
+	test.each([undefined, { cursor: "next-page", total_count: 101 }])(
+		"retains object response metadata without changing the payload (%j)",
+		async (info) => {
+			const payload = { items: [{ id: "one" }] };
+			const { client: c } = client(() =>
+				json({ success: true, result: payload, result_info: info })
+			);
+			const result = await c.send({ method: "GET", path: () => "/a" });
+			assert.deepEqual(result, payload);
+			assert.equal(JSON.stringify(result), JSON.stringify(payload));
+			assert.deepEqual(getResultInfo(result), info);
+		}
+	);
+
+	test("retains list response metadata", async () => {
+		const payload = [{ id: "one" }];
+		const info = { cursor: "next-page", page: 1, total_count: 101 };
+		const { client: c } = client(() =>
+			json({ success: true, result: payload, result_info: info })
+		);
+		assert.deepEqual(await c.send({ method: "GET", path: () => "/a" }), {
+			result: payload,
+			result_info: info,
+		});
+	});
+
 	test("sends no body for a missing one", async () => {
 		const { client: c, sent } = client(() =>
 			json({ success: true, result: null })
@@ -289,8 +316,14 @@ describe("send", () => {
 	});
 
 	test("throws an envelope's errors", async () => {
+		const body = {
+			success: false,
+			errors: [{ message: "a" }, "b"],
+			messages: [{ code: 1001, message: "More detail" }],
+			result: null,
+		};
 		const { client: c } = client(() =>
-			json({ success: false, errors: [{ message: "a" }, "b"], result: null })
+			json(body, 200, { "x-request-id": "r" })
 		);
 		await assert.rejects(
 			c.send({ method: "GET", path: () => "/a" }),
@@ -298,7 +331,9 @@ describe("send", () => {
 				assert.ok(error instanceof ApiError);
 				assert.equal(error.message, "a, b");
 				assert.equal(error.statusCode, undefined);
-				assert.equal(error.rawResponse?.status, 0);
+				assert.deepEqual(error.body, body);
+				assert.equal(error.rawResponse?.status, 200);
+				assert.equal(error.requestId, "r");
 				return true;
 			}
 		);
@@ -340,6 +375,28 @@ describe("send", () => {
 			(error: unknown) => {
 				assert.ok(error instanceof ApiError);
 				assert.equal(error.message, 'Status code: 404\nBody: "nope"');
+				return true;
+			}
+		);
+	});
+
+	test("preserves error details and status without a content-type header", async () => {
+		const body = {
+			success: false,
+			errors: [{ code: 7, message: "Invalid input" }],
+			messages: [{ code: 1001, message: "More detail" }],
+		};
+		const { client: c } = client(() => {
+			const response = json(body, 400);
+			response.headers.delete("content-type");
+			return response;
+		});
+		await assert.rejects(
+			c.send({ method: "GET", path: () => "/a" }),
+			(error: unknown) => {
+				assert.ok(error instanceof ApiError);
+				assert.equal(error.statusCode, 400);
+				assert.deepEqual(error.body, body);
 				return true;
 			}
 		);

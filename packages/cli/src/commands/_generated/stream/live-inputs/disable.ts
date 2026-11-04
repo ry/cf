@@ -83,17 +83,16 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						message: `Disable this live input? Active broadcasts will be terminated and future connections will be blocked until it is re-enabled.`,
 					}))
 				) {
-					process.stderr.write("Aborted.\n");
 					return;
 				}
 
-				const result = await withProgress(`Deleting`, async () =>
+				const result = await withProgress(`Processing`, async () =>
 					client.send(operation, {
 						account_id: accountId,
 						live_input_identifier: argv["live-input-identifier"],
 					})
 				);
-				formatOutput(result, { successLabel: `Deleted` });
+				formatOutput(result, { successLabel: `Done` });
 			}
 		),
 };

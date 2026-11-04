@@ -27,7 +27,7 @@ import { runWithTelemetry } from "#lib/telemetry/index.js";
 function builder(yargs: Argv<CommonYargsOptions>) {
 	return yargs
 		.usage(
-			"$0 tags account-resources update\n\nCreates or updates tags for a specific account or zone-level resource. Replaces all existing tags for the resource."
+			"$0 tags account-resources update\n\nCreates or updates tags for a specific account or zone-level resource. Replaces all existing tags for the resource.\n\nRuns against your account. Pass --zone to run against a zone instead. CLOUDFLARE_ZONE_ID is ignored."
 		)
 		.option("if-match", {
 			type: "string",
@@ -50,6 +50,7 @@ function builder(yargs: Argv<CommonYargsOptions>) {
 				"account_ruleset",
 				"ai_gateway",
 				"ai_search_instance",
+				"ai_search_namespace",
 				"alerting_policy",
 				"alerting_webhook",
 				"cloudflared_tunnel",
@@ -203,6 +204,7 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 							"account_ruleset",
 							"ai_gateway",
 							"ai_search_instance",
+							"ai_search_namespace",
 							"alerting_policy",
 							"alerting_webhook",
 							"cloudflared_tunnel",
@@ -230,17 +232,6 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 							"vectorize_index",
 							"worker",
 						] as const
-					);
-				}
-
-				if (
-					argv["resource-type"] === "worker_version" &&
-					argv["worker-id"] === undefined
-				) {
-					argv["worker-id"] = await promptForRequiredField(
-						"worker-id",
-						"Worker ID is required only for worker_version resources",
-						{ question: "Enter value for --worker-id" }
 					);
 				}
 

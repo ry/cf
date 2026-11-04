@@ -6,6 +6,7 @@ import {
 	runInTempDir,
 	seed,
 } from "@cloudflare/workers-utils/test-helpers";
+import { x } from "tinyexec";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
 	normalizeProjectCommandExit,
@@ -14,6 +15,8 @@ import {
 } from "../../../lib/autoconfig.js";
 import { makeExecutable, nodeScript } from "../../helpers/executable.js";
 import { runCf } from "../../helpers/run-cf.js";
+
+vi.mock("tinyexec", { spy: true });
 
 /**
  * Integration tests for `cf dev`. We drive the command through
@@ -41,7 +44,7 @@ describe("cf dev", () => {
 			const result = await runCf(["dev"]);
 
 			expect(result.exitCode).toBe(1);
-			expect(std.err).toMatch(/No Cloudflare dev-server is installed/);
+			expect(std.err).toMatch(/No Cloudflare dev server is installed/);
 			// Should list every known impl as an install option.
 			expect(std.err).toMatch(/@cloudflare\/vite-plugin/);
 			expect(std.err).toMatch(/wrangler/);
@@ -62,7 +65,7 @@ describe("cf dev", () => {
 
 			const result = await runCf(["dev"]);
 			expect(result.exitCode).toBe(1);
-			expect(std.err).toMatch(/No Cloudflare dev-server is installed/);
+			expect(std.err).toMatch(/No Cloudflare dev server is installed/);
 		});
 	});
 
@@ -103,7 +106,9 @@ describe("cf dev", () => {
 			const result = await runCf(["dev"]);
 			expect(result.exitCode).toBe(1);
 			expect(std.err).not.toMatch(/Multiple Cloudflare dev-server/);
-			expect(std.err).toMatch(/@cloudflare\/vite-plugin .* is not installed/);
+			expect(unframe(std.err)).toMatch(
+				/@cloudflare\/vite-plugin .* is not installed/
+			);
 		});
 	});
 
@@ -118,7 +123,9 @@ describe("cf dev", () => {
 
 			const result = await runCf(["dev"]);
 			expect(result.exitCode).toBe(1);
-			expect(std.err).toMatch(/@cloudflare\/vite-plugin .* is not installed/);
+			expect(unframe(std.err)).toMatch(
+				/@cloudflare\/vite-plugin .* is not installed/
+			);
 			expect(std.err).toMatch(
 				/npm install --save-dev @cloudflare\/vite-plugin@beta/
 			);
@@ -137,13 +144,13 @@ describe("cf dev", () => {
 
 			const result = await runCf(["dev"]);
 			expect(result.exitCode).toBe(1);
-			expect(std.err).toMatch(/does not include the cf delegate/);
+			expect(unframe(std.err)).toMatch(/does not include the cf delegate/);
 			expect(std.err).toMatch(/@cloudflare\/vite-plugin v2 beta/);
 			expect(std.err).toContain("cf dev");
 			expect(std.err).toContain("cf build");
 			expect(std.err).toContain("cf deploy");
-			expect(std.err).toContain("cf previews deploy");
-			expect(std.err).not.toMatch(
+			expect(unframe(std.err)).toContain("cf previews deploy");
+			expect(unframe(std.err)).not.toMatch(
 				/@cloudflare\/vite-plugin .* is not installed/
 			);
 		});
@@ -161,9 +168,9 @@ describe("cf dev", () => {
 
 			const result = await runCf(["dev"]);
 			expect(result.exitCode).toBe(1);
-			expect(std.err).toMatch(/does not include the cf delegate/);
+			expect(unframe(std.err)).toMatch(/does not include the cf delegate/);
 			expect(std.err).toMatch(/wrangler@4\.136\.0 or newer/);
-			expect(std.err).not.toMatch(/wrangler .* is not installed/);
+			expect(unframe(std.err)).not.toMatch(/wrangler .* is not installed/);
 		});
 
 		it("surfaces the cargo hint when the rust impl is declared but missing", async () => {
@@ -180,7 +187,9 @@ describe("cf dev", () => {
 
 			const result = await runCf(["dev"]);
 			expect(result.exitCode).toBe(1);
-			expect(std.err).toMatch(/cloudflare-rs-dev-server .* is not installed/);
+			expect(unframe(std.err)).toMatch(
+				/cloudflare-rs-dev-server .* is not installed/
+			);
 			expect(std.err).toMatch(/cargo install cloudflare-rs-dev-server/);
 		});
 	});
@@ -208,7 +217,7 @@ describe("cf dev", () => {
 			expect(std.err).toContain("cf dev");
 			expect(std.err).toContain("cf build");
 			expect(std.err).toContain("cf deploy");
-			expect(std.err).toContain("cf previews deploy");
+			expect(unframe(std.err)).toContain("cf previews deploy");
 		});
 
 		it("runs the detected framework dev command", async () => {
@@ -237,6 +246,12 @@ describe("cf dev", () => {
 					.trim()
 					.split("\n")
 			).toEqual(["dev", "--mode", "staging"]);
+			// The dev server owns the terminal, stdout included.
+			expect(vi.mocked(x).mock.lastCall?.[2]?.nodeOptions?.stdio).toEqual([
+				"inherit",
+				"inherit",
+				"inherit",
+			]);
 		});
 
 		it("runs Vite for a Next.js project with vinext installed", async () => {
@@ -325,42 +340,58 @@ describe("cf dev", () => {
 			);
 		});
 
-		it("runs a detected Vite dev command with its environment", async () => {
-			const logMessage = vi
-				.spyOn(clack.log, "message")
-				.mockImplementation(() => {});
-			const registryPath = resolve(process.cwd(), "shared-registry");
-			vi.stubEnv("CLOUDFLARE_REGISTRY_PATH", registryPath);
-			vi.stubEnv("DEBUG", "");
-			await seed({
-				"cloudflare.config.ts": "export default {};",
-				"package.json": JSON.stringify({
-					name: "vite-project",
-					dependencies: { vite: "^7.0.0" },
-				}),
-				"package-lock.json": "{}",
-				"node_modules/vite/package.json": JSON.stringify({
-					name: "vite",
-					version: "7.0.0",
-				}),
-				"node_modules/.bin/vite": nodeScript(
-					'require("node:fs").writeFileSync("env.out", [process.env.CLOUDFLARE_VITE_FORCE_BUILD_OUTPUT, process.env.CLOUDFLARE_REGISTRY_PATH, process.env.WRANGLER_REGISTRY_PATH, process.env.MINIFLARE_REGISTRY_PATH].join("\\n") + "\\n");'
-				),
-			});
-			makeExecutable("node_modules/.bin/vite", { npmBin: true });
+		it.each([false, true])(
+			"inherits registry settings for a detected Vite dev command (configured: %s)",
+			async (configured) => {
+				const logMessage = vi
+					.spyOn(clack.log, "message")
+					.mockImplementation(() => {});
+				const registryEnv = {
+					CLOUDFLARE_DEV_REGISTRY_PATH: configured
+						? "canonical registry"
+						: undefined,
+					CLOUDFLARE_REGISTRY_PATH: configured
+						? "legacy cf registry"
+						: undefined,
+					WRANGLER_REGISTRY_PATH: configured ? "wrangler registry" : undefined,
+					MINIFLARE_REGISTRY_PATH: configured
+						? "legacy miniflare registry"
+						: undefined,
+				};
+				for (const [name, value] of Object.entries(registryEnv)) {
+					vi.stubEnv(name, value);
+				}
+				vi.stubEnv("DEBUG", "");
+				await seed({
+					"cloudflare.config.ts": "export default {};",
+					"package.json": JSON.stringify({
+						name: "vite-project",
+						dependencies: { vite: "^7.0.0" },
+					}),
+					"package-lock.json": "{}",
+					"node_modules/vite/package.json": JSON.stringify({
+						name: "vite",
+						version: "7.0.0",
+					}),
+					"node_modules/.bin/vite": nodeScript(
+						`require("node:fs").writeFileSync("env.out", JSON.stringify(["CLOUDFLARE_VITE_FORCE_BUILD_OUTPUT", ...${JSON.stringify(Object.keys(registryEnv))}].map(name => process.env[name])));`
+					),
+				});
+				makeExecutable("node_modules/.bin/vite", { npmBin: true });
 
-			const result = await runCf(["dev"]);
+				const result = await runCf(["dev"]);
 
-			expect(result.exitCode).toBe(0);
-			expect(logMessage).toHaveBeenCalledWith("Delegating to npx vite", {
-				spacing: 0,
-			});
-			expect(
-				readFileSync(resolve(process.cwd(), "env.out"), "utf8")
-					.trim()
-					.split("\n")
-			).toEqual(["true", registryPath, registryPath, registryPath]);
-		});
+				expect(result.exitCode).toBe(0);
+				expect(logMessage).toHaveBeenCalledWith("Delegating to npx vite", {
+					output: process.stderr,
+					spacing: 0,
+				});
+				expect(JSON.parse(readFileSync("env.out", "utf8"))).toEqual([
+					"true",
+					...Object.values(registryEnv).map((value) => value ?? null),
+				]);
+			}
+		);
 
 		it("formats delegation without environment overrides", async () => {
 			const logMessage = vi
@@ -371,6 +402,7 @@ describe("cf dev", () => {
 				exitCode: 0,
 			});
 			expect(logMessage).toHaveBeenCalledWith('Delegating to node -e ""', {
+				output: process.stderr,
 				spacing: 0,
 			});
 		});
@@ -444,6 +476,7 @@ describe("cf dev", () => {
 				})
 			).toEqual({ exitCode: 0 });
 			expect(logMessage).toHaveBeenCalledWith('Delegating to node -e ""', {
+				output: process.stderr,
 				spacing: 0,
 			});
 		});
@@ -465,7 +498,7 @@ describe("cf dev", () => {
 					"  FOO=bar",
 					"  BAZ=qux",
 				].join("\n"),
-				{ spacing: 0 }
+				{ output: process.stderr, spacing: 0 }
 			);
 		});
 
@@ -485,7 +518,7 @@ describe("cf dev", () => {
 					'Delegating to node -e "" with environment override:',
 					"  FOO=bar",
 				].join("\n"),
-				{ spacing: 0 }
+				{ output: process.stderr, spacing: 0 }
 			);
 		});
 
@@ -547,6 +580,12 @@ describe("cf dev", () => {
 
 			const result = await runCf(["dev"]);
 			expect(result.exitCode).toBe(0);
+			// The dev server owns the terminal, stdout included.
+			expect(vi.mocked(x).mock.lastCall?.[2]?.nodeOptions?.stdio).toEqual([
+				"inherit",
+				"inherit",
+				"inherit",
+			]);
 		});
 
 		it("rejects future Vite plugin major versions", async () => {
@@ -635,3 +674,8 @@ describe("cf dev", () => {
 		});
 	});
 });
+
+/** Join the lines an error frame wrapped, so a long path can't split a phrase. */
+function unframe(text: string): string {
+	return text.replaceAll("\n│ ", " ");
+}

@@ -77,17 +77,16 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						message: `This operation halts an in-progress full packet capture. Any unsaved capture data will be lost.`,
 					}))
 				) {
-					process.stderr.write("Aborted.\n");
 					return;
 				}
 
-				const result = await withProgress(`Deleting`, async () =>
+				const result = await withProgress(`Updating`, async () =>
 					client.send(operation, {
 						account_id: accountId,
 						pcap_id: argv["pcap-id"],
 					})
 				);
-				formatOutput(result, { successLabel: `Deleted` });
+				formatOutput(result, { successLabel: `Updated` });
 			}
 		),
 };

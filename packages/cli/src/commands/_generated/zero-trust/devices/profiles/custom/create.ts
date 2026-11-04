@@ -107,6 +107,11 @@ function builder(yargs: Argv<CommonYargsOptions>) {
 			description: "Whether to add Microsoft IPs to Split Tunnel exclusions.",
 			default: false,
 		})
+		.option("global-acceleration-allow-manual-override", {
+			type: "boolean",
+			description:
+				"Whether WARP users may manually override the automatic Global Acceleration decision. Defaults to true when not provided.",
+		})
 		.option("global-acceleration-api-endpoints", {
 			type: "string",
 			array: true,
@@ -240,14 +245,14 @@ function builder(yargs: Argv<CommonYargsOptions>) {
 				"browser-extension-config-proxy-control",
 				"browser-extension-config-proxy-enabled",
 			].some((k) => argv[k] !== undefined);
-			if (groupSet) {
+			if (!argv.body && groupSet) {
 				const missing = [
 					"browser-extension-config-proxy-control",
 					"browser-extension-config-proxy-enabled",
 				].filter((k) => argv[k] === undefined);
 				if (missing.length > 0) {
 					throw new Error(
-						`${missing.map((m) => "--" + m).join(", ")} ${missing.length === 1 ? "is" : "are"} required when any --browser_extension_config-* flag is set`
+						`${missing.map((m) => "--" + m).join(", ")} ${missing.length === 1 ? "is" : "are"} required when any --browser-extension-config-* flag is set`
 					);
 				}
 			}
@@ -255,13 +260,14 @@ function builder(yargs: Argv<CommonYargsOptions>) {
 		})
 		.check((argv) => {
 			const groupSet = [
+				"global-acceleration-allow-manual-override",
 				"global-acceleration-api-endpoints",
 				"global-acceleration-autoswitch",
 				"global-acceleration-enabled",
 				"global-acceleration-masque-endpoints",
 				"global-acceleration-wireguard-endpoints",
 			].some((k) => argv[k] !== undefined);
-			if (groupSet) {
+			if (!argv.body && groupSet) {
 				const missing = [
 					"global-acceleration-api-endpoints",
 					"global-acceleration-enabled",
@@ -270,7 +276,7 @@ function builder(yargs: Argv<CommonYargsOptions>) {
 				].filter((k) => argv[k] === undefined);
 				if (missing.length > 0) {
 					throw new Error(
-						`${missing.map((m) => "--" + m).join(", ")} ${missing.length === 1 ? "is" : "are"} required when any --global_acceleration-* flag is set`
+						`${missing.map((m) => "--" + m).join(", ")} ${missing.length === 1 ? "is" : "are"} required when any --global-acceleration-* flag is set`
 					);
 				}
 			}
@@ -281,14 +287,14 @@ function builder(yargs: Argv<CommonYargsOptions>) {
 				"virtual-networks-allowed",
 				"virtual-networks-default",
 			].some((k) => argv[k] !== undefined);
-			if (groupSet) {
+			if (!argv.body && groupSet) {
 				const missing = [
 					"virtual-networks-allowed",
 					"virtual-networks-default",
 				].filter((k) => argv[k] === undefined);
 				if (missing.length > 0) {
 					throw new Error(
-						`${missing.map((m) => "--" + m).join(", ")} ${missing.length === 1 ? "is" : "are"} required when any --virtual_networks-* flag is set`
+						`${missing.map((m) => "--" + m).join(", ")} ${missing.length === 1 ? "is" : "are"} required when any --virtual-networks-* flag is set`
 					);
 				}
 			}
@@ -318,6 +324,7 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 						"enable-device-credential-authentication",
 						"enabled",
 						"exclude-office-ips",
+						"global-acceleration-allow-manual-override",
 						"global-acceleration-autoswitch",
 						"global-acceleration-enabled",
 						"profile-type",
@@ -371,6 +378,8 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 										exclude: parseObjectArray(argv["exclude"], "exclude"),
 										exclude_office_ips: argv["exclude-office-ips"],
 										global_acceleration: {
+											allow_manual_override:
+												argv["global-acceleration-allow-manual-override"],
 											api_endpoints: argv["global-acceleration-api-endpoints"],
 											autoswitch: argv["global-acceleration-autoswitch"],
 											enabled: argv["global-acceleration-enabled"],
@@ -477,6 +486,8 @@ const command: CommandModule<CommonYargsOptions, Args> = {
 					exclude: parseObjectArray(argv["exclude"], "exclude"),
 					exclude_office_ips: argv["exclude-office-ips"],
 					global_acceleration: {
+						allow_manual_override:
+							argv["global-acceleration-allow-manual-override"],
 						api_endpoints: argv["global-acceleration-api-endpoints"],
 						autoswitch: argv["global-acceleration-autoswitch"],
 						enabled: argv["global-acceleration-enabled"],
